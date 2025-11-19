@@ -21,6 +21,8 @@ A blog integration for your MedusaJS admin page, enabling you to create and mana
 
 The Medusa-Plugin-Blogger is designed to provide a seamless user experience, utilizing modern tools and libraries for rich text editing and tag management. By incorporating this plugin into your MedusaJS setup, you can maintain a cohesive content and commerce environment, streamlining your workflow and ensuring consistency across your brand's digital presence.
 
+**Compatible with Medusa v1 and Medusa v2**
+
 <div align="center">
   <img src="https://imgur.com/JAfYqeL.png" alt="medusa-plugin-blogger rapresentation" />
 </div>
@@ -35,12 +37,13 @@ Run the following command in the directory of the Medusa backend:
 yarn add medusa-plugin-blogger
 ```
 
-### Add to medusa-config.js
+### Add to medusa-config.js (or medusa-config.ts)
 
-In `medusa-config.js` add the following to the `plugins` array:
+In `medusa-config.js` (or `medusa-config.ts` for Medusa v2) add the following to the `plugins` array:
   
 ```js
-const  plugins = {
+// For Medusa v1
+const plugins = {
   	///...other plugins
   	{
 		resolve: 'medusa-plugin-blogger',
@@ -49,7 +52,21 @@ const  plugins = {
 		},
 	}
 }
+
+// For Medusa v2 (TypeScript)
+module.exports = defineConfig({
+  plugins: [
+    {
+      resolve: "medusa-plugin-blogger",
+      options: {
+        enableUI: true,
+      },
+    },
+  ],
+})
 ```
+
+**Note:** This plugin is compatible with both Medusa v1 and Medusa v2. For Medusa v2, the plugin uses Knex queries instead of TypeORM for better compatibility.
 
 ### Update database schema
 
@@ -69,9 +86,56 @@ The max size of the body that an endpoint can receive is `10000000B` which is th
 
 ## Store endpoints
 
-```GET /store/blog/articles```
+### ```GET /store/blog/articles```
 
-Returns a json object of all the articles respecting the conditions passed as query parameters, this endpoint accepts query parameters to do a conditional search using TypeORM find parameter, `blog_articles` can be search using any filter found in the PostgreSQL documentation, because only query parameters are accepted, a function to convert objects to query parameters is provided down here:
+Returns a json object of all **published** articles (where `draft = false`) respecting the conditions passed as query parameters. This endpoint accepts query parameters for pagination and filtering.
+
+**Query Parameters:**
+- `take` (optional): Number of articles to return (default: 50)
+- `skip` (optional): Number of articles to skip (default: 0)
+
+**Response:**
+```json
+{
+  "articles": [...],
+  "count": 10
+}
+```
+
+**Note:** This endpoint only returns published articles. Draft articles are not accessible via the storefront API.
+
+### ```GET /store/blog/articles/:slug```
+
+Returns a single published article by its URL slug.
+
+**Parameters:**
+- `slug`: The `url_slug` of the article
+
+**Response:**
+```json
+{
+  "article": {
+    "id": "...",
+    "title": "...",
+    "subtitle": "...",
+    "body": {...},
+    "thumbnail_image": "http://localhost:9000/static/...",
+    "tags": [...],
+    ...
+  }
+}
+```
+
+**Note:** 
+- Only published articles (where `draft = false`) are accessible
+- The `thumbnail_image` URL is automatically normalized to a full URL
+- Returns 404 if article is not found or is a draft
+
+---
+
+**Legacy Query Parameters (for advanced filtering):**
+
+For advanced filtering, you can use query parameters similar to the admin API. A function to convert objects to query parameters is provided below:
 
 ```typescript
 export const objectToQueryString = (obj) => {
@@ -155,9 +219,49 @@ Modify an already existing blog article, this route requires the new `BlogArticl
 Delete an article having the id in the url.
 
 # Storefront integration
-The way Medusa Plugin Blogger is developed makes it easy to integrate the plugin with the functionality of MedusaJS and your storefront, there are only two simple steps that you need to follow:
-1. Fetch `GET /store/blog/articles` with the conditions that you like (like shown above)
-2. You don't need to process further any part of the article because they are already in a form that can be displayed in HTML (for example `title` is already a string that can be displayed, `tags` is already an array that can be displayed) except for the body which you'll need to process into HTML, the editor used for the body is EditorJS which provides a clear JSON object for the body https://editorjs.io/saving-data/
+The way Medusa Plugin Blogger is developed makes it easy to integrate the plugin with the functionality of MedusaJS and your storefront. Here are the steps to follow:
+
+## Basic Integration
+
+1. **Fetch the list of articles:**
+   ```typescript
+   const response = await fetch(`${backendUrl}/store/blog/articles?take=50`, {
+     headers: {
+       "x-publishable-api-key": publishableKey, // Required for Medusa v2
+     },
+   })
+   const { articles, count } = await response.json()
+   ```
+
+2. **Fetch a single article by slug:**
+   ```typescript
+   const response = await fetch(`${backendUrl}/store/blog/articles/${slug}`, {
+     headers: {
+       "x-publishable-api-key": publishableKey, // Required for Medusa v2
+     },
+   })
+   const { article } = await response.json()
+   ```
+
+3. **Display the article data:**
+   - `title`, `subtitle`, `author` are strings ready to display
+   - `tags` is an array ready to iterate
+   - `thumbnail_image` is a full URL ready to use in `<img>` tags
+   - `body` needs to be processed from EditorJS JSON format (see below)
+
+## Processing EditorJS Body Content
+
+The `body` field contains EditorJS JSON data that needs to be rendered. The editor used for the body is EditorJS which provides a clear JSON object for the body. See https://editorjs.io/saving-data/ for details.
+
+You'll need to iterate through the `body.blocks` array and render each block type according to your design. Common block types include:
+- `paragraph`: Text content
+- `header`: Headings (h1-h6)
+- `list`: Ordered or unordered lists
+- `quote`: Blockquotes
+- `code`: Code blocks
+- `image`: Images (with URL, caption, etc.)
+
+**Note:** The `thumbnail_image` field is automatically normalized to a full URL by the API, so you can use it directly in image tags without additional processing.
 
 EditorJS divides the body into blocks, which you can easily iterate through and add your logic for every type of block that you use. Depending on what features of the editor you are going to use you can implement text highlighting, code blocks, images, headings, and much more... Everything is left up to your implementation!
 
