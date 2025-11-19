@@ -40,8 +40,12 @@
     "@editorjs/underline": "^1.1.0",
     "@editorjs/warning": "^1.4.0",
     "@medusajs/admin": "latest",
-    "@medusajs/icons": "^1.2.1",
-    "@medusajs/ui": "^2.4.3",
+    "@medusajs/admin-sdk": "^2.11.3",
+    "@medusajs/framework": "^2.11.3",
+    "@medusajs/icons": "^2.11.3",
+    "@medusajs/js-sdk": "^2.11.3",
+    "@medusajs/ui": "^4.0.27",
+    "@tanstack/react-query": "^4.42.0",
     "@yaireo/dragsort": "^1.3.1",
     "@yaireo/tagify": "^4.24.0",
     "body-parser": "^1.19.0",
@@ -50,6 +54,7 @@
     "express": "^4.17.2",
     "medusa-react": "^9.0.16",
     "react-dropzone": "^14.2.3",
+    "react-router-dom": "^6.22.3",
     "simple-image-editorjs": "^1.4.0",
     "typeorm": "^0.3.16"
   },
@@ -73,9 +78,10 @@
     "typescript": "^4.5.2"
   },
   "peerDependencies": {
-    "@medusajs/medusa": "^1.20.6",
-    "react": "18.2.0",
-    "react-router-dom": "6.22.3"
+    "@medusajs/medusa": "^2.11.3",
+    "@medusajs/framework": "^2.11.3",
+    "react": "^18.3.1",
+    "react-router-dom": "^6.22.3"
   },
   "jest": {
     "globals": {

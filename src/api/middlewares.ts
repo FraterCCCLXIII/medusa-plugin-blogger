@@ -1,4 +1,4 @@
-import { MiddlewaresConfig } from "@medusajs/medusa"
+import { MiddlewaresConfig } from "@medusajs/framework/http"
 
 export const config: MiddlewaresConfig = {
   routes: [

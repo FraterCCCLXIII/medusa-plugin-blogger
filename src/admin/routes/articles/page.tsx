@@ -1,229 +1,380 @@
-import { RouteConfig } from "@medusajs/admin";
-import { DocumentSeries } from "@medusajs/icons";
-import { Button } from "@medusajs/ui";
-import { ArticleCard } from "../../../ui-components/article_card";
-import { useEffect, useState, useRef } from "react";
-import { useAdminCustomQuery, useAdminCustomDelete, useAdminDeleteFile } from "medusa-react";
-import { createPathRequest } from "../../../javascript/utils";
-import { objectToQueryString } from "../../../javascript/parse_query_params";
-import useTimedState from "../../../javascript/useTimedState";
-import ToolBar from "../../../ui-components/tool_bar";
+import { defineRouteConfig } from "@medusajs/admin-sdk"
+import { DocumentSeries } from "@medusajs/icons"
+import React, { useEffect, useState, useMemo } from "react"
+import { useNavigate } from "react-router-dom"
+import { sdk } from "../../../lib/compat-provider"
+import { 
+  DataTable, 
+  Heading, 
+  Button, 
+  DropdownMenu,
+  useDataTable,
+  createDataTableColumnHelper,
+} from "@medusajs/ui"
+import { PencilSquare, Trash, Plus, EllipsisHorizontal } from "@medusajs/icons"
+
+type Article = {
+  id: string
+  title: string
+  subtitle: string | null
+  author: string
+  url_slug: string
+  draft: boolean
+  created_at: string
+  updated_at: string
+  thumbnail_image: string | null
+  tags: string[]
+}
+
+const columnHelper = createDataTableColumnHelper<Article>()
 
 const ArticlePage = () => {
-    // Error loading the initial page
-    const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate()
+  const [search, setSearch] = useState("")
+  const [pagination, setPagination] = useState({
+    pageIndex: 0,
+    pageSize: 20,
+  })
 
-    // Keep track of articles loadings
-    const [ articlesCount, setArticlesCount ] = useState({
-        take: 12,
-        skip: 0
-    });
-    const [ filtersSort, setFiltersSort ] = useState({});
+  const offset = useMemo(() => pagination.pageIndex * pagination.pageSize, [pagination])
+  const [articles, setArticles] = useState<Article[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-    const { data, isLoading } = useAdminCustomQuery(
-        "/blog/articles?" + objectToQueryString(
-            {
-                select: ["id", "thumbnail_image", "body_images" , "title", "subtitle", "created_at"],
-                take: articlesCount.take,
-                skip: articlesCount.skip,
-                ...filtersSort
-            }),
-        [""]
-    )
-
-    /* 
-    The GET request will change over time as the filters/order changes for this reason a state
-    which keeps everything in order is required.
-    */
-    const [ articles, setArticles ] = useState([]);
-
-    const [ articlesLoadState, setArticlesLoadState ] = useTimedState(null, 7000);
-    const previousNumberArticles = useRef(0);
-
-    useEffect(() => {
-        if (JSON.stringify(filtersSort) != "{}") {
-            setArticlesCount((articles_count) => {
-                return {...articles_count, skip: 0}
-            })
-            setArticles([]);
-            previousNumberArticles.current = 0;
-        }
-    }, [JSON.stringify(filtersSort)])
-
-    useEffect(() => {
-        if (data) {
-            if (data?.error) {
-                if (previousNumberArticles.current == 0) {
-                    setError(data.error);
-                } else {
-                    setError(null);
-                    // If it is not the first load don't show a full page error
-                    setArticlesLoadState("Unable to load more articles: " + data.error)
-                }
-            } else if (data?.articles) {
-                setError(null);
-                setArticles(articles => [...articles, ...data.articles]);
-
-                if (!data.articles.length && articles.length) {
-                    setArticlesLoadState("There are no more articles left")
-                }
-            } else {
-                setError("We couldn't find any articles, this is probably a bug of the plugin, please file a report");
-            }
-        }
-    }, [data]);
-    function loadMoreArticles() {
-        setArticlesCount(articles_count => {
-            return {...articles_count, skip: articles.length}
-        })
+  // Build query params
+  const queryParams = useMemo(() => {
+    const params = new URLSearchParams()
+    params.append("skip", offset.toString())
+    params.append("take", pagination.pageSize.toString())
+    if (search) {
+      params.append("where", JSON.stringify({ title: { $ilike: `%${search}%` } }))
     }
+    return params.toString()
+  }, [offset, pagination.pageSize, search])
 
-    // Handler in case an article needs to be deleted
-    const [articleIdDelete, setArticleIdDelete] = useState<string>("");
-    const [deleteError, setDeleteError] = useTimedState(null, 5000);
-    const [deleteSuccess, setDeleteSuccess] = useTimedState(null, 5000);
-    const customDelete = useAdminCustomDelete(
-        createPathRequest(articleIdDelete), []
-    )
-    const mutateDelete = customDelete.mutate;
-    const deleteFile = useAdminDeleteFile();
-    useEffect(() => {
-        if (articleIdDelete) {
-            deleteArticle();
-        }
-    }, [articleIdDelete])
-    async function deleteArticle() {
-        const article = articles.filter(article => article.id == articleIdDelete)[0];
-
-        const uploadPromises = [];
-        if (article.body_images) {
-            for (let image of article.body_images) {
-                if (image) {
-                    let file_key = image.split('/').slice(-1)[0];
-                    const uploadPromise = new Promise(async (resolve, reject) => {
-                        deleteFile.mutate({ file_key: file_key }, {
-                            onSuccess: () => {
-                                resolve(undefined);
-                            },
-                            onError: () => {
-                                reject();
-                            }
-                        })
-                    })
-                    uploadPromises.push(uploadPromise);
-                }
-            }
-        }
-        if (article.thumbnail_image) {
-            let file_key = article.thumbnail_image.split('/').slice(-1)[0];
-                const uploadPromise = new Promise(async (resolve, reject) => {
-                    deleteFile.mutate({ file_key: file_key }, {
-                        onSuccess: () => {
-                            resolve(undefined);
-                        },
-                        onError: () => {
-                            reject();
-                        }
-                    })
-                })
-            uploadPromises.push(uploadPromise);
-        }
-
-        try {
-            await Promise.all(uploadPromises);
-        } catch (e) {
-            setDeleteSuccess("");
-            return setDeleteError("One or more images inside the article could not be deleted")
-        }
+  // Fetch articles using SDK directly
+  useEffect(() => {
+    let cancelled = false
+    
+    const fetchArticles = async () => {
+      setIsLoading(true)
+      setError(null)
+      
+      try {
+        console.log("[ArticlePage] Fetching articles with params:", queryParams)
+        const url = `/admin/blog/articles?${queryParams}`
+        console.log("[ArticlePage] Full URL:", url)
         
-        mutateDelete(
-            void 0, {
-                onSuccess: successDelete, 
-                onError: errorDelete
-            }
+        const response = await sdk.client.fetch<{ articles: Article[]; count: number; sanitized_query: any }>(
+          url,
+          {
+            method: "GET",
+            credentials: "include",
+          }
         )
+        
+        console.log("[ArticlePage] Raw response:", response)
+        console.log("[ArticlePage] Response type:", typeof response)
+        console.log("[ArticlePage] Response received:", {
+          articlesCount: response?.articles?.length || 0,
+          count: response?.count || 0,
+          hasArticles: !!response?.articles,
+          responseKeys: response ? Object.keys(response) : [],
+          responseString: JSON.stringify(response).substring(0, 500),
+        })
+        
+        // Handle both direct response and wrapped response
+        const articles = response?.articles || (response as any)?.data?.articles || []
+        const count = response?.count || (response as any)?.data?.count || 0
+        
+        console.log("[ArticlePage] Extracted articles:", articles.length, "count:", count)
+        
+        if (!cancelled) {
+          setArticles(articles)
+          setTotalCount(count)
+          setIsLoading(false)
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          console.error("[ArticlePage] Error fetching articles:", err)
+          console.error("[ArticlePage] Error details:", {
+            message: err?.message,
+            stack: err?.stack,
+            response: err?.response,
+          })
+          setError(err?.message || "Failed to fetch articles")
+          setIsLoading(false)
+        }
+      }
     }
-    function successDelete() {
-        setArticles(articles => articles.filter(article => article.id != articleIdDelete))
-        setDeleteSuccess("Article deleted successfully");
-        setDeleteError(null);
+    
+    fetchArticles()
+    
+    return () => {
+      cancelled = true
     }
-    function errorDelete() {
-        setDeleteSuccess(null);
-        setDeleteError("Couldn't connect to the server, by mindful that the images inside the article are deleted");
-    }
+  }, [queryParams])
 
-    return (
-        <div className="flex flex-col gap-5 items-center break-words relative mb-12">
-            <ToolBar setFiltersSort={setFiltersSort}/>
-            {
-                (deleteError || deleteSuccess) ?
-                <div className="flex justify-center">
-                    {
-                        deleteError ? 
-                        <p className="text-center max-w-lg font-medium text-red-500">
-                            {deleteError}
-                        </p> :
-                        ""
+  const columns = [
+    columnHelper.accessor("title", {
+      header: "Article",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const article = row.original
+        return (
+          <div className="flex h-full w-full max-w-[250px] items-center gap-x-3 overflow-hidden">
+            {article.thumbnail_image && (
+              <div className="w-fit flex-shrink-0">
+                <div className="bg-ui-bg-component border-ui-border-base flex items-center justify-center overflow-hidden rounded border h-8 w-8">
+                  <img
+                    src={article.thumbnail_image}
+                    alt={article.title}
+                    className="h-full w-full object-cover object-center"
+                  />
+                </div>
+              </div>
+            )}
+            <span title={article.title} className="truncate">
+              {article.title}
+            </span>
+          </div>
+        )
+      },
+    }),
+    columnHelper.accessor("author", {
+      header: "Author",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const article = row.original
+        return (
+          <div className="flex h-full w-full items-center">
+            <span className="truncate">{article.author || "-"}</span>
+          </div>
+        )
+      },
+    }),
+    columnHelper.accessor("draft", {
+      header: "Status",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const article = row.original
+        return (
+          <div className="txt-compact-small text-ui-fg-subtle flex h-full w-full items-center gap-x-2 overflow-hidden">
+            <div
+              role="presentation"
+              className="flex h-5 w-2 items-center justify-center"
+            >
+              <div
+                className={`h-2 w-2 rounded-sm shadow-[0px_0px_0px_1px_rgba(0,0,0,0.12)_inset] ${
+                  article.draft ? "bg-ui-tag-orange-icon" : "bg-ui-tag-green-icon"
+                }`}
+              ></div>
+            </div>
+            <span className="truncate">{article.draft ? "Draft" : "Published"}</span>
+          </div>
+        )
+      },
+    }),
+    columnHelper.accessor("tags", {
+      header: "Tags",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const article = row.original
+        const tags = Array.isArray(article.tags) ? article.tags : []
+        return (
+          <div className="flex h-full w-full items-center overflow-hidden max-w-[250px]">
+            {tags.length > 0 ? (
+              <span title={tags.join(", ")} className="truncate">
+                {tags.slice(0, 2).join(", ")}
+                {tags.length > 2 && ` +${tags.length - 2}`}
+              </span>
+            ) : (
+              <span className="text-ui-fg-muted">-</span>
+            )}
+          </div>
+        )
+      },
+    }),
+    columnHelper.accessor("updated_at", {
+      header: "Updated",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const article = row.original
+        const date = new Date(article.updated_at)
+        return (
+          <div className="flex h-full w-full items-center">
+            <span className="truncate">
+              {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          </div>
+        )
+      },
+    }),
+    columnHelper.display({
+      id: "actions",
+      header: "",
+      cell: ({ row }) => {
+        const article = row.original
+        return (
+          <div className="flex size-full items-center justify-end">
+            <DropdownMenu>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  type="button"
+                  className="transition-fg inline-flex items-center justify-center overflow-hidden rounded-md outline-none disabled:bg-ui-bg-disabled disabled:shadow-buttons-neutral disabled:text-ui-fg-disabled text-ui-fg-subtle bg-ui-button-transparent hover:bg-ui-button-transparent-hover active:bg-ui-button-transparent-pressed focus-visible:shadow-buttons-neutral-focus focus-visible:bg-ui-bg-base disabled:!bg-transparent disabled:!shadow-none h-7 w-7 p-1"
+                >
+                  <EllipsisHorizontal />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content>
+                <DropdownMenu.Item
+                  onClick={() => navigate(`../a/article-editor?id=${article.id}`)}
+                  className="gap-x-2"
+                >
+                  <PencilSquare className="text-ui-fg-subtle" />
+                  Edit
+                </DropdownMenu.Item>
+                <DropdownMenu.Separator />
+                <DropdownMenu.Item
+                  className="text-ui-fg-error gap-x-2"
+                  onClick={async () => {
+                    if (confirm(`Are you sure you want to delete "${article.title}"?`)) {
+                      try {
+                        const response = await fetch(`/admin/blog/articles/${article.id}`, {
+                          method: "DELETE",
+                          credentials: "include",
+                        })
+                        if (response.ok) {
+                          window.location.reload()
+                        }
+                      } catch (err) {
+                        console.error("Error deleting article:", err)
+                      }
                     }
-                    {
-                        deleteSuccess ? 
-                        <p className="text-center max-w-lg font-medium text-blue-500">
-                            {deleteSuccess}
-                        </p> :
-                        ""
-                    }
-                </div> :
-                ""
-            }
-            {
-                isLoading && !articles.length ?
-                    (<p className="text-center max-w-sm mt-4 font-medium">Loading...</p>)
-                :
-                (
-                    !error ? 
-                        // JSON.stringify(data)
-                        (articles && articles.length ? 
-                        <div className="grid grid-cols-3 w-full gap-x-3 gap-y-2.5">
-                            {articles.map((article) => 
-                                <div key={article.id} className="h-full">
-                                    <ArticleCard article={article} setArticleIdDelete={setArticleIdDelete}/>
-                                </div>
-                            )}
-                        </div> :
-                        <p className="max-w-sm w-full text-center mt-4 font-medium">No articles found</p>
-                        )
-                    :
-                    (<p className={`${typeof error === 'object' ? "text-start" : "text-center"} max-w-sm text-red-500 mt-4 font-medium`}>{
-                        typeof error === 'object' ? JSON.stringify(error) : error
-                        }</p>)
-                )
-            }
-            {
-                !isLoading && articles.length ? 
-                <div>
-                    <Button onClick={loadMoreArticles}>
-                        Load more
-                    </Button>
-                </div> :
-                ""
-            }
-            {
-                articlesLoadState ?
-                <p className="text-center max-w-xl font-medium">
-                    {articlesLoadState}
-                </p> :
-                ""
-            }
-        </div>
-    );
-};
+                  }}
+                >
+                  <Trash className="text-ui-fg-error" />
+                  Delete
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu>
+          </div>
+        )
+      },
+    }),
+  ]
 
-export const config: RouteConfig = {
-    link: {
-        label: "Articles",
-        icon: DocumentSeries,
+  // Debug: Log articles before creating table
+  useEffect(() => {
+    console.log("[ArticlePage] Articles state updated:", {
+      articlesCount: articles.length,
+      totalCount,
+      isLoading,
+      articles: articles.map(a => ({ id: a.id, title: a.title })),
+    })
+  }, [articles, totalCount, isLoading])
+
+  const table = useDataTable({
+    columns,
+    data: articles,
+    getRowId: (row) => row.id,
+    rowCount: totalCount,
+    isLoading,
+    pagination: {
+      state: pagination,
+      onPaginationChange: setPagination,
     },
-};
+    search: {
+      state: search,
+      onSearchChange: setSearch,
+    },
+    onRowClick: (event, row) => {
+      navigate(`../a/article-editor?id=${row.id}`)
+    },
+  })
 
-export default ArticlePage;
+  // Debug: Log table instance and data
+  useEffect(() => {
+    console.log("[ArticlePage] Table debug:", {
+      hasTable: !!table,
+      articlesLength: articles.length,
+      tableData: table?.getRowModel?.()?.rows?.length || 'N/A',
+      tableState: table?.getState?.() || 'N/A',
+    })
+  }, [table, articles])
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-red-500">{error}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-screen w-full flex-col overflow-auto">
+        <main className="flex h-full w-full flex-col items-center overflow-y-auto transition-opacity delay-200 duration-200">
+          <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
+            <div className="flex flex-col gap-y-3">
+              <div className="shadow-elevation-card-rest bg-ui-bg-base w-full rounded-lg divide-y p-0">
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4">
+                  <Heading level="h1">Articles</Heading>
+                  <div className="flex items-center justify-center gap-x-2">
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      onClick={() => navigate("../a/article-editor")}
+                    >
+                      <Plus />
+                      Create
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Table */}
+                <div className="divide-y">
+                  <div className="flex w-full flex-col overflow-hidden">
+                    {isLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <p className="text-ui-fg-subtle">Loading articles...</p>
+                      </div>
+                    ) : articles.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-16">
+                        <p className="text-ui-fg-subtle mb-4">No articles found</p>
+                        <Button
+                          variant="secondary"
+                          size="small"
+                          onClick={() => navigate("../a/article-editor")}
+                        >
+                          <Plus />
+                          Create your first article
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="w-full overflow-x-auto">
+                        <DataTable instance={table}>
+                          <DataTable.Toolbar className="flex items-center justify-end">
+                            <DataTable.Search />
+                          </DataTable.Toolbar>
+                          <DataTable.Table />
+                        </DataTable>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+  )
+}
+
+export const config = defineRouteConfig({
+  label: "Articles",
+  icon: DocumentSeries,
+})
+
+export default ArticlePage

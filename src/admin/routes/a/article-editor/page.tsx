@@ -1,13 +1,13 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState, useRef } from "react";
 import EditorJS from "@editorjs/editorjs";
-import UploadArticleItem from "../../../ui-components/upload_article";
-import UploadImageItem from "../../../ui-components/upload_image";
+import UploadArticleItem from "../../../../ui-components/upload_article";
+import UploadImageItem from "../../../../ui-components/upload_image";
 import { Button, Container } from "@medusajs/ui";
-import { useAdminCustomQuery, useAdminCustomPost, useAdminCustomDelete, useAdminUploadFile, useAdminDeleteFile  } from "../../../lib/compat-hooks";
-import { listenChangesSave, getIdFromCurrentUrl, addIdFromCurrentUrl, removeIdFromCurrentUrl, createPathRequest, loadArticle, formatDateManually, mergeUniqueArrays } from "../../../javascript/utils";
-import { createFileFromBlobURL } from "../../../javascript/file_manipulation";
-import { MedusaProvider } from "../../../lib/compat-provider";
+import { useAdminCustomQuery, useAdminCustomPost, useAdminCustomDelete, useAdminUploadFile, useAdminDeleteFile  } from "../../../../lib/compat-hooks";
+import { listenChangesSave, getIdFromCurrentUrl, addIdFromCurrentUrl, removeIdFromCurrentUrl, createPathRequest, loadArticle, formatDateManually, mergeUniqueArrays } from "../../../../javascript/utils";
+import { createFileFromBlobURL } from "../../../../javascript/file_manipulation";
+import { MedusaProvider } from "../../../../lib/compat-provider";
 
 // Editor JS plugins
 import Paragraph from "@editorjs/paragraph";
